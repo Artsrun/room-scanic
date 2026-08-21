@@ -5,20 +5,973 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1">
 <meta name="theme-color" content="#0a0a0b">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="description" content="Room Scanic — visual + acoustic room capture on the web">
-<title>SPLAT.PROBE — Room Scanic</title>
+<title>Room Scanic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+    "@sparkjsdev/spark": "https://www.sparkjs.dev/releases/2.1.0/spark.module.min.js"
+  }
+}
+</script>
+
 <style>
-/* Full app styles + logic live in the committed file; this is a bootstrap placeholder that redirects attention to the real SPA once uploaded via follow-up. */
-body{margin:0;background:#0a0a0b;color:#e8e8ea;font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;text-align:center;padding:24px}
-a{color:#a78bfa}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0b;
+  --bg1:#111114;
+  --bg2:#18181c;
+  --bg3:#222228;
+  --border:#2c2c34;
+  --text:#e8e8ea;
+  --text2:#9898a8;
+  --accent:#a78bfa;
+  --accent-dim:#7c5fe6;
+  --danger:#f87171;
+  --success:#34d399;
+  --mono:'IBM Plex Mono',monospace;
+  --sans:'Inter',system-ui,sans-serif;
+  --r:12px;
+  --r-sm:8px;
+  --safe-t:env(safe-area-inset-top,0px);
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-l:env(safe-area-inset-left,0px);
+  --safe-r:env(safe-area-inset-right,0px);
+}
+html,body{height:100%;width:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+/* Layout */
+#app{display:flex;flex-direction:column;height:100%;padding-top:var(--safe-t);padding-bottom:var(--safe-b)}
+.screen{display:none;flex:1;overflow-y:auto;flex-direction:column}
+.screen.active{display:flex}
+/* Nav bar */
+#nav{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;padding-left:calc(16px + var(--safe-l));padding-right:calc(16px + var(--safe-r));
+  background:rgba(10,10,11,.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;flex-shrink:0
+}
+#nav-title{font-size:15px;font-weight:600;letter-spacing:.04em;color:var(--text)}
+#nav-subtitle{font-family:var(--mono);font-size:11px;color:var(--accent);opacity:.8}
+.nav-actions{display:flex;gap:8px}
+/* Buttons */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:10px 18px;border-radius:var(--r-sm);font-family:var(--sans);font-size:14px;font-weight:500;
+  border:none;cursor:pointer;transition:background .15s,opacity .15s,transform .1s;text-decoration:none;
+  -webkit-tap-highlight-color:transparent;user-select:none;
+}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent-dim)}
+.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--bg2);color:var(--text)}
+.btn-danger{background:rgba(248,113,113,.15);color:var(--danger);border:1px solid rgba(248,113,113,.3)}
+.btn-sm{padding:6px 12px;font-size:13px;border-radius:6px}
+.btn-icon{padding:8px;border-radius:var(--r-sm);width:36px;height:36px}
+.btn[disabled]{opacity:.4;pointer-events:none}
+/* Cards */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:16px}
+.card-accent{border-color:var(--accent);background:rgba(167,139,250,.06)}
+/* Typography */
+h1{font-size:28px;font-weight:700;line-height:1.2}
+h2{font-size:20px;font-weight:600}
+h3{font-size:16px;font-weight:600}
+.mono{font-family:var(--mono)}
+.label{font-size:11px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--text2)}
+.value{font-family:var(--mono);font-size:13px;color:var(--text)}
+.muted{color:var(--text2)}
+/* Page padding */
+.page{padding:20px 16px;padding-left:calc(16px + var(--safe-l));padding-right:calc(16px + var(--safe-r));display:flex;flex-direction:column;gap:20px}
+/* Divider */
+hr{border:none;border-top:1px solid var(--border)}
+/* Badge */
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:500;font-family:var(--mono)}
+.badge-ok{background:rgba(52,211,153,.15);color:var(--success)}
+.badge-warn{background:rgba(167,139,250,.15);color:var(--accent)}
+.badge-err{background:rgba(248,113,113,.15);color:var(--danger)}
+/* Progress */
+.progress-bar{height:4px;border-radius:2px;background:var(--bg3);overflow:hidden}
+.progress-fill{height:100%;background:var(--accent);border-radius:2px;transition:width .4s ease}
+/* Tab bar */
+#tab-bar{
+  display:flex;background:var(--bg1);border-top:1px solid var(--border);flex-shrink:0;
+  padding-bottom:var(--safe-b);padding-left:var(--safe-l);padding-right:var(--safe-r)
+}
+.tab{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:8px 4px;font-size:10px;font-weight:500;color:var(--text2);
+  border:none;background:transparent;cursor:pointer;-webkit-tap-highlight-color:transparent;
+  transition:color .15s;letter-spacing:.03em
+}
+.tab svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tab.active{color:var(--accent)}
+/* World list */
+.world-item{
+  display:flex;align-items:center;gap:14px;padding:14px;
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);
+  cursor:pointer;transition:border-color .15s,background .15s;-webkit-tap-highlight-color:transparent
+}
+.world-item:hover{border-color:var(--accent);background:var(--bg3)}
+.world-thumb{width:48px;height:48px;border-radius:8px;background:var(--bg3);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.world-thumb canvas{width:100%;height:100%;object-fit:cover}
+.world-info{flex:1;min-width:0}
+.world-name{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.world-meta{font-family:var(--mono);font-size:11px;color:var(--text2);margin-top:3px}
+/* Permission item */
+.perm-row{display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--border)}
+.perm-row:last-child{border-bottom:none}
+.perm-icon{width:40px;height:40px;border-radius:10px;background:var(--bg3);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.perm-icon svg{width:20px;height:20px;stroke:var(--accent);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.perm-label{flex:1;font-size:14px;font-weight:500}
+.perm-desc{font-size:12px;color:var(--text2);margin-top:2px}
+/* Capture grid */
+#capture-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.frame-cell{aspect-ratio:4/3;background:var(--bg3);border-radius:8px;overflow:hidden;position:relative;border:1px solid var(--border)}
+.frame-cell canvas,.frame-cell video{width:100%;height:100%;object-fit:cover;display:block}
+.frame-label{position:absolute;bottom:6px;left:6px;font-family:var(--mono);font-size:10px;color:#fff;background:rgba(0,0,0,.6);padding:2px 6px;border-radius:4px}
+/* Sweep viz */
+#sweep-viz{width:100%;height:80px;background:var(--bg3);border-radius:var(--r-sm);overflow:hidden}
+/* Splat viewer */
+#splat-mount{flex:1;min-height:300px;position:relative;background:#000;border-radius:var(--r);overflow:hidden}
+#splat-mount canvas{width:100%!important;height:100%!important;display:block}
+.splat-overlay{position:absolute;top:10px;left:10px;display:flex;gap:6px;flex-wrap:wrap;z-index:10}
+/* Summary KV grid */
+.kv-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.kv-cell{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px}
+/* Toast */
+#toast{
+  position:fixed;bottom:calc(80px + var(--safe-b));left:50%;transform:translateX(-50%) translateY(20px);
+  background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);
+  padding:10px 16px;font-size:13px;white-space:nowrap;z-index:999;
+  opacity:0;transition:opacity .2s,transform .2s;pointer-events:none
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+/* Loading spinner */
+.spinner{width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* Scrollbar */
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+/* Responsive */
+@media(min-width:600px){
+  .page{padding:24px;max-width:640px;margin:0 auto;width:100%}
+  h1{font-size:34px}
+}
+/* Hero gradient */
+.hero-gradient{
+  background:radial-gradient(ellipse at 50% 0%,rgba(167,139,250,.18) 0%,transparent 65%);
+  padding-bottom:8px
+}
+/* Waveform canvas */
+#waveform{width:100%;height:60px}
 </style>
 </head>
 <body>
-<div>
-<h1>Room Scanic</h1>
-<p>Uploading full SPA… refresh in a moment.</p>
-<p><a href="https://github.com/Artsrun/room-scanic">github.com/Artsrun/room-scanic</a></p>
-</div>
-<script>location.replace('./index.html?'+Date.now())</script>
+<div id="app">
+
+  <!-- NAV -->
+  <nav id="nav">
+    <div>
+      <div id="nav-title">Room Scanic</div>
+      <div id="nav-subtitle">SPLAT.PROBE v0.1</div>
+    </div>
+    <div class="nav-actions">
+      <button class="btn btn-ghost btn-sm btn-icon" id="btn-export" title="Export session JSON" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </button>
+    </div>
+  </nav>
+
+  <!-- SCREEN: HOME -->
+  <section id="screen-home" class="screen active">
+    <div class="page">
+      <div class="hero-gradient">
+        <h1>Your Worlds</h1>
+        <p class="muted" style="margin-top:6px;font-size:14px">Capture, reconstruct, and explore your spaces.</p>
+      </div>
+
+      <button class="btn btn-primary" id="btn-new-scan" style="align-self:flex-start">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New Room Scan
+      </button>
+
+      <div id="worlds-list">
+        <!-- populated by JS -->
+      </div>
+
+      <div class="card" style="text-align:center;padding:32px 16px" id="worlds-empty">
+        <div style="font-size:40px;margin-bottom:12px">🏠</div>
+        <div style="font-weight:600;margin-bottom:6px">No worlds yet</div>
+        <div class="muted" style="font-size:13px">Tap "New Room Scan" to capture your first space.</div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span class="label">Demo Splat</span>
+        <button class="btn btn-ghost btn-sm" id="btn-demo-splat">View butterfly.spz</button>
+      </div>
+
+      <!-- Stats row -->
+      <div class="kv-grid" id="stats-grid">
+        <div class="kv-cell">
+          <div class="label">Sessions</div>
+          <div class="value" id="stat-sessions">0</div>
+        </div>
+        <div class="kv-cell">
+          <div class="label">Frames</div>
+          <div class="value" id="stat-frames">0</div>
+        </div>
+        <div class="kv-cell">
+          <div class="label">Sweeps</div>
+          <div class="value" id="stat-sweeps">0</div>
+        </div>
+        <div class="kv-cell">
+          <div class="label">Last capture</div>
+          <div class="value" id="stat-last">—</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCREEN: PERMISSIONS -->
+  <section id="screen-perms" class="screen">
+    <div class="page">
+      <div>
+        <h2>Permissions</h2>
+        <p class="muted" style="margin-top:6px;font-size:13px">Room Scanic needs access to camera, microphone, and device motion to reconstruct your space.</p>
+      </div>
+
+      <div class="card">
+        <div class="perm-row" id="perm-camera">
+          <div class="perm-icon">
+            <svg viewBox="0 0 24 24"><rect x="2" y="7" width="15" height="13" rx="2"/><path d="M17 9l5-3v12l-5-3"/></svg>
+          </div>
+          <div style="flex:1">
+            <div class="perm-label">Camera</div>
+            <div class="perm-desc">Capture multi-view images of the room</div>
+          </div>
+          <span class="badge badge-warn" id="badge-camera">pending</span>
+        </div>
+        <div class="perm-row" id="perm-mic">
+          <div class="perm-icon">
+            <svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10a7 7 0 0 1-14 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
+          </div>
+          <div style="flex:1">
+            <div class="perm-label">Microphone</div>
+            <div class="perm-desc">Record acoustic sine sweep for room response</div>
+          </div>
+          <span class="badge badge-warn" id="badge-mic">pending</span>
+        </div>
+        <div class="perm-row" id="perm-motion">
+          <div class="perm-icon">
+            <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          </div>
+          <div style="flex:1">
+            <div class="perm-label">Device Motion</div>
+            <div class="perm-desc">Orientation data for spatial tracking</div>
+          </div>
+          <span class="badge badge-warn" id="badge-motion">pending</span>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="btn-grant-perms">Grant Permissions</button>
+      <button class="btn btn-ghost" id="btn-skip-perms">Skip &amp; Continue</button>
+    </div>
+  </section>
+
+  <!-- SCREEN: CAPTURE -->
+  <section id="screen-capture" class="screen">
+    <div class="page">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <h2>Capture</h2>
+        <span class="badge badge-warn" id="capture-status-badge">ready</span>
+      </div>
+
+      <div id="capture-grid">
+        <div class="frame-cell" id="cell-live">
+          <video id="live-video" autoplay muted playsinline></video>
+          <div class="frame-label">LIVE</div>
+        </div>
+        <div class="frame-cell" id="cell-f1">
+          <canvas id="frame-1"></canvas>
+          <div class="frame-label">FRAME 1</div>
+        </div>
+        <div class="frame-cell" id="cell-f2">
+          <canvas id="frame-2"></canvas>
+          <div class="frame-label">FRAME 2</div>
+        </div>
+        <div class="frame-cell" id="cell-f3">
+          <canvas id="frame-3"></canvas>
+          <div class="frame-label">FRAME 3</div>
+        </div>
+      </div>
+
+      <!-- Capture controls -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="btn-snap" style="flex:1">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><circle cx="12" cy="12" r="3"/><path d="M20 7h-2.5l-1.5-2h-8L6.5 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/></svg>
+          Snap Frame
+        </button>
+        <button class="btn btn-ghost" id="btn-sweep" style="flex:1">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          Sine Sweep
+        </button>
+      </div>
+
+      <!-- Progress -->
+      <div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span class="label">Frames captured</span>
+          <span class="mono" style="font-size:12px" id="frame-count">0 / 3</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="frame-progress" style="width:0%"></div></div>
+      </div>
+
+      <!-- Sweep viz -->
+      <div>
+        <div class="label" style="margin-bottom:8px">Acoustic sweep</div>
+        <canvas id="sweep-viz"></canvas>
+        <div id="sweep-status" class="muted" style="font-size:12px;margin-top:4px;font-family:var(--mono)">idle</div>
+      </div>
+
+      <!-- Orientation -->
+      <div class="card" id="orientation-card">
+        <div class="label" style="margin-bottom:8px">Device Orientation</div>
+        <div class="kv-grid">
+          <div><span class="label">α</span> <span class="mono" id="ori-alpha">—</span></div>
+          <div><span class="label">β</span> <span class="mono" id="ori-beta">—</span></div>
+          <div><span class="label">γ</span> <span class="mono" id="ori-gamma">—</span></div>
+          <div><span class="label">abs</span> <span class="mono" id="ori-abs">—</span></div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="btn-finish" disabled>
+        Finish &amp; Review
+      </button>
+    </div>
+  </section>
+
+  <!-- SCREEN: SUMMARY -->
+  <section id="screen-summary" class="screen">
+    <div class="page">
+      <h2>Session Summary</h2>
+
+      <div class="kv-grid" id="summary-kv">
+        <!-- populated by JS -->
+      </div>
+
+      <div>
+        <div class="label" style="margin-bottom:8px">Captured Frames</div>
+        <div id="summary-frames" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">
+          <!-- canvases inserted by JS -->
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="label" style="margin-bottom:6px">Raw Metadata (JSON)</div>
+        <pre id="summary-json" style="font-family:var(--mono);font-size:11px;color:var(--text2);overflow-x:auto;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto"></pre>
+      </div>
+
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" style="flex:1" id="btn-view-splat">View Splat</button>
+        <button class="btn btn-ghost" style="flex:1" id="btn-done">Done</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCREEN: SPLAT VIEWER -->
+  <section id="screen-splat" class="screen">
+    <div class="page" style="flex:1;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <h2>Splat Viewer</h2>
+        <button class="btn btn-ghost btn-sm" id="btn-splat-back">← Back</button>
+      </div>
+
+      <div id="splat-mount" style="flex:1">
+        <div class="splat-overlay">
+          <span class="badge badge-warn" id="splat-status-badge">loading</span>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn btn-ghost btn-sm" id="btn-splat-reset">Reset Camera</button>
+        <button class="btn btn-ghost btn-sm" id="btn-splat-auto">Auto Rotate</button>
+        <span class="mono muted" style="font-size:11px;align-self:center" id="splat-fps">— fps</span>
+      </div>
+
+      <div class="muted" style="font-size:11px;margin-top:6px">
+        Drag to orbit · Pinch/scroll to zoom · Two-finger pan
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB BAR -->
+  <nav id="tab-bar">
+    <button class="tab active" data-screen="home">
+      <svg viewBox="0 0 24 24"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><polyline points="9 21 9 12 15 12 15 21"/></svg>
+      Home
+    </button>
+    <button class="tab" data-screen="perms">
+      <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      Perms
+    </button>
+    <button class="tab" data-screen="capture">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M20 7h-2.5l-1.5-2h-8L6.5 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/></svg>
+      Capture
+    </button>
+    <button class="tab" data-screen="summary">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      Summary
+    </button>
+    <button class="tab" data-screen="splat">
+      <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      Splat
+    </button>
+  </nav>
+
+</div><!-- #app -->
+
+<div id="toast"></div>
+
+<script type="module">
+// ─── State ──────────────────────────────────────────────────────────────────
+const state = {
+  worlds: JSON.parse(localStorage.getItem('rs_worlds') || '[]'),
+  sessions: parseInt(localStorage.getItem('rs_sessions') || '0'),
+  totalFrames: parseInt(localStorage.getItem('rs_frames') || '0'),
+  totalSweeps: parseInt(localStorage.getItem('rs_sweeps') || '0'),
+  lastCapture: localStorage.getItem('rs_last') || null,
+  // current session
+  session: null,
+  stream: null,
+  orientation: null,
+  frameCanvases: [],
+  sweepDone: false,
+  mediaRecorder: null,
+  audioChunks: [],
+  audioCtx: null,
+};
+
+function saveCounters() {
+  localStorage.setItem('rs_sessions', state.sessions);
+  localStorage.setItem('rs_frames', state.totalFrames);
+  localStorage.setItem('rs_sweeps', state.totalSweeps);
+  if (state.lastCapture) localStorage.setItem('rs_last', state.lastCapture);
+  localStorage.setItem('rs_worlds', JSON.stringify(state.worlds));
+}
+
+// ─── Navigation ─────────────────────────────────────────────────────────────
+const screens = {};
+document.querySelectorAll('.screen').forEach(el => {
+  screens[el.id.replace('screen-', '')] = el;
+});
+const tabs = document.querySelectorAll('.tab');
+
+function navigate(name) {
+  Object.values(screens).forEach(s => s.classList.remove('active'));
+  tabs.forEach(t => t.classList.remove('active'));
+  const s = screens[name];
+  if (s) s.classList.add('active');
+  const t = document.querySelector(`.tab[data-screen="${name}"]`);
+  if (t) t.classList.add('active');
+  if (name === 'home') refreshHome();
+  if (name === 'summary') buildSummary();
+}
+
+tabs.forEach(t => t.addEventListener('click', () => navigate(t.dataset.screen)));
+
+// ─── Toast ───────────────────────────────────────────────────────────────────
+let toastTimer;
+function toast(msg, dur = 2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), dur);
+}
+
+// ─── Home screen ─────────────────────────────────────────────────────────────
+function refreshHome() {
+  document.getElementById('stat-sessions').textContent = state.sessions;
+  document.getElementById('stat-frames').textContent = state.totalFrames;
+  document.getElementById('stat-sweeps').textContent = state.totalSweeps;
+  document.getElementById('stat-last').textContent = state.lastCapture
+    ? new Date(state.lastCapture).toLocaleDateString() : '—';
+
+  const list = document.getElementById('worlds-list');
+  const empty = document.getElementById('worlds-empty');
+  list.innerHTML = '';
+  if (state.worlds.length === 0) {
+    empty.style.display = '';
+  } else {
+    empty.style.display = 'none';
+    state.worlds.forEach((w, i) => {
+      const item = document.createElement('div');
+      item.className = 'world-item';
+      item.innerHTML = `
+        <div class="world-thumb">
+          <canvas width="48" height="48" id="thumb-${i}"></canvas>
+        </div>
+        <div class="world-info">
+          <div class="world-name">${escHtml(w.name)}</div>
+          <div class="world-meta">${w.frames} frames · ${new Date(w.date).toLocaleDateString()}</div>
+        </div>
+        <span class="badge badge-ok">done</span>
+      `;
+      item.addEventListener('click', () => { navigate('splat'); });
+      list.appendChild(item);
+      // draw thumb
+      if (w.thumb) {
+        const img = new Image();
+        img.onload = () => {
+          const c = document.getElementById(`thumb-${i}`);
+          if (c) { const ctx = c.getContext('2d'); ctx.drawImage(img,0,0,48,48); }
+        };
+        img.src = w.thumb;
+      }
+    });
+  }
+}
+
+document.getElementById('btn-new-scan').addEventListener('click', () => navigate('perms'));
+document.getElementById('btn-demo-splat').addEventListener('click', () => navigate('splat'));
+document.getElementById('btn-export').addEventListener('click', exportSession);
+
+// ─── Permissions ─────────────────────────────────────────────────────────────
+const permState = { camera: false, mic: false, motion: false };
+
+function setBadge(id, state) {
+  const el = document.getElementById(id);
+  el.className = 'badge ' + (state === 'granted' ? 'badge-ok' : state === 'denied' ? 'badge-err' : 'badge-warn');
+  el.textContent = state;
+}
+
+document.getElementById('btn-grant-perms').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-grant-perms');
+  btn.disabled = true;
+  btn.textContent = 'Requesting…';
+  await requestCamera();
+  await requestMic();
+  await requestMotion();
+  btn.disabled = false;
+  btn.textContent = 'Grant Permissions';
+  if (permState.camera || permState.mic) {
+    toast('Permissions obtained — ready to capture');
+    setTimeout(() => navigate('capture'), 800);
+  }
+});
+
+document.getElementById('btn-skip-perms').addEventListener('click', () => navigate('capture'));
+
+async function requestCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    state.stream = stream;
+    const v = document.getElementById('live-video');
+    v.srcObject = stream;
+    permState.camera = true;
+    setBadge('badge-camera', 'granted');
+  } catch (e) {
+    setBadge('badge-camera', 'denied');
+    console.warn('Camera:', e.message);
+  }
+}
+
+async function requestMic() {
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    // keep separate mic stream
+    state.micStream = s;
+    permState.mic = true;
+    setBadge('badge-mic', 'granted');
+  } catch (e) {
+    setBadge('badge-mic', 'denied');
+    console.warn('Mic:', e.message);
+  }
+}
+
+async function requestMotion() {
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      const res = await DeviceOrientationEvent.requestPermission();
+      if (res === 'granted') { permState.motion = true; setBadge('badge-motion', 'granted'); startOrientation(); }
+      else setBadge('badge-motion', 'denied');
+    } catch (e) { setBadge('badge-motion', 'denied'); }
+  } else if (typeof DeviceOrientationEvent !== 'undefined') {
+    permState.motion = true;
+    setBadge('badge-motion', 'granted');
+    startOrientation();
+  } else {
+    setBadge('badge-motion', 'n/a');
+  }
+}
+
+function startOrientation() {
+  window.addEventListener('deviceorientation', (e) => {
+    state.orientation = { alpha: e.alpha, beta: e.beta, gamma: e.gamma, absolute: e.absolute };
+    document.getElementById('ori-alpha').textContent = e.alpha != null ? e.alpha.toFixed(1) + '°' : '—';
+    document.getElementById('ori-beta').textContent  = e.beta  != null ? e.beta.toFixed(1)  + '°' : '—';
+    document.getElementById('ori-gamma').textContent = e.gamma != null ? e.gamma.toFixed(1) + '°' : '—';
+    document.getElementById('ori-abs').textContent   = e.absolute ? 'yes' : 'no';
+  }, { passive: true });
+}
+
+// ─── Capture screen ───────────────────────────────────────────────────────────
+let capturedFrames = 0;
+const MAX_FRAMES = 3;
+
+document.getElementById('btn-snap').addEventListener('click', snapFrame);
+document.getElementById('btn-sweep').addEventListener('click', runSweep);
+document.getElementById('btn-finish').addEventListener('click', finishCapture);
+
+function snapFrame() {
+  const video = document.getElementById('live-video');
+  if (!video.srcObject && !video.videoWidth) {
+    toast('No camera stream — grant permissions first');
+    return;
+  }
+  if (capturedFrames >= MAX_FRAMES) { toast('Max frames reached'); return; }
+
+  const idx = capturedFrames + 1;
+  const canvas = document.getElementById(`frame-${idx}`);
+  if (!canvas) return;
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0);
+
+  // draw placeholder if no video
+  if (!video.videoWidth) {
+    ctx.fillStyle = '#222228';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#a78bfa';
+    ctx.font = '14px IBM Plex Mono, monospace';
+    ctx.fillText(`FRAME ${idx} — ${new Date().toLocaleTimeString()}`, 10, 30);
+  }
+
+  state.frameCanvases.push(canvas.toDataURL('image/jpeg', 0.8));
+  capturedFrames++;
+  state.totalFrames++;
+  updateFrameUI();
+  toast(`Frame ${idx} captured`);
+}
+
+function updateFrameUI() {
+  document.getElementById('frame-count').textContent = `${capturedFrames} / ${MAX_FRAMES}`;
+  const pct = (capturedFrames / MAX_FRAMES) * 100;
+  document.getElementById('frame-progress').style.width = pct + '%';
+  const badge = document.getElementById('capture-status-badge');
+  if (capturedFrames >= MAX_FRAMES) {
+    badge.textContent = 'complete';
+    badge.className = 'badge badge-ok';
+    document.getElementById('btn-finish').disabled = false;
+  } else {
+    badge.textContent = `${capturedFrames}/${MAX_FRAMES}`;
+    badge.className = 'badge badge-warn';
+  }
+}
+
+// ─── Sine sweep ───────────────────────────────────────────────────────────────
+async function runSweep() {
+  const btn = document.getElementById('btn-sweep');
+  const status = document.getElementById('sweep-status');
+  if (!state.audioCtx) {
+    state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  const ac = state.audioCtx;
+  if (ac.state === 'suspended') await ac.resume();
+
+  btn.disabled = true;
+  status.textContent = 'sweeping 20 Hz → 20 kHz…';
+
+  const duration = 3;
+  const osc = ac.createOscillator();
+  const gain = ac.createGain();
+  const analyser = ac.createAnalyser();
+  analyser.fftSize = 256;
+
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(20, ac.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(20000, ac.currentTime + duration);
+
+  gain.gain.setValueAtTime(0.4, ac.currentTime);
+  gain.gain.setValueAtTime(0.4, ac.currentTime + duration - 0.05);
+  gain.gain.linearRampToValueAtTime(0, ac.currentTime + duration);
+
+  osc.connect(gain);
+  gain.connect(analyser);
+  analyser.connect(ac.destination);
+
+  // record if mic available
+  if (state.micStream) {
+    const dest = ac.createMediaStreamDestination();
+    analyser.connect(dest);
+    state.mediaRecorder = new MediaRecorder(dest.stream);
+    state.audioChunks = [];
+    state.mediaRecorder.ondataavailable = (e) => state.audioChunks.push(e.data);
+    state.mediaRecorder.start();
+  }
+
+  const vizCanvas = document.getElementById('sweep-viz');
+  const vCtx = vizCanvas.getContext('2d');
+  vizCanvas.width = vizCanvas.offsetWidth * devicePixelRatio;
+  vizCanvas.height = vizCanvas.offsetHeight * devicePixelRatio;
+  vCtx.scale(devicePixelRatio, devicePixelRatio);
+  const W = vizCanvas.offsetWidth, H = vizCanvas.offsetHeight;
+  const bufLen = analyser.frequencyBinCount;
+  const dataArr = new Uint8Array(bufLen);
+  let rafId;
+  let startT = performance.now();
+
+  function drawSweep() {
+    rafId = requestAnimationFrame(drawSweep);
+    analyser.getByteFrequencyData(dataArr);
+    const elapsed = (performance.now() - startT) / 1000;
+    vCtx.fillStyle = '#18181c';
+    vCtx.fillRect(0, 0, W, H);
+    const barW = W / bufLen;
+    for (let i = 0; i < bufLen; i++) {
+      const v = dataArr[i] / 255;
+      const h = v * H;
+      const hue = 260 + v * 40;
+      vCtx.fillStyle = `hsl(${hue},70%,${40 + v * 30}%)`;
+      vCtx.fillRect(i * barW, H - h, barW - 1, h);
+    }
+    // progress line
+    const xLine = (elapsed / duration) * W;
+    vCtx.strokeStyle = '#a78bfa';
+    vCtx.lineWidth = 1.5;
+    vCtx.beginPath();
+    vCtx.moveTo(xLine, 0);
+    vCtx.lineTo(xLine, H);
+    vCtx.stroke();
+    if (elapsed >= duration) cancelAnimationFrame(rafId);
+  }
+  drawSweep();
+
+  osc.start(ac.currentTime);
+  osc.stop(ac.currentTime + duration);
+
+  osc.onended = () => {
+    cancelAnimationFrame(rafId);
+    if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
+      state.mediaRecorder.stop();
+    }
+    state.sweepDone = true;
+    state.totalSweeps++;
+    status.textContent = 'sweep complete ✓';
+    btn.disabled = false;
+    toast('Acoustic sweep recorded');
+    if (capturedFrames >= MAX_FRAMES) {
+      document.getElementById('btn-finish').disabled = false;
+    }
+  };
+}
+
+// ─── Finish capture ───────────────────────────────────────────────────────────
+function finishCapture() {
+  state.lastCapture = new Date().toISOString();
+  state.sessions++;
+  const world = {
+    name: `Room ${state.sessions}`,
+    date: state.lastCapture,
+    frames: capturedFrames,
+    sweepDone: state.sweepDone,
+    orientation: state.orientation,
+    thumb: state.frameCanvases[0] || null,
+  };
+  state.worlds.unshift(world);
+  state.session = world;
+  saveCounters();
+
+  // stop camera
+  if (state.stream) {
+    state.stream.getTracks().forEach(t => t.stop());
+    state.stream = null;
+  }
+
+  document.getElementById('btn-export').style.display = '';
+  navigate('summary');
+}
+
+// ─── Summary ──────────────────────────────────────────────────────────────────
+function buildSummary() {
+  const s = state.session;
+  if (!s) return;
+  const kv = document.getElementById('summary-kv');
+  const meta = {
+    'Session': `#${state.sessions}`,
+    'World name': s.name,
+    'Frames': s.frames,
+    'Sweep': s.sweepDone ? 'yes' : 'no',
+    'Date': new Date(s.date).toLocaleString(),
+    'Orientation': s.orientation ? `α${s.orientation.alpha?.toFixed(0) ?? '?'}` : 'n/a',
+  };
+  kv.innerHTML = Object.entries(meta).map(([k, v]) =>
+    `<div class="kv-cell"><div class="label">${escHtml(k)}</div><div class="value">${escHtml(String(v))}</div></div>`
+  ).join('');
+
+  const framesDiv = document.getElementById('summary-frames');
+  framesDiv.innerHTML = '';
+  state.frameCanvases.forEach((src, i) => {
+    const img = document.createElement('img');
+    img.src = src;
+    img.style.cssText = 'height:80px;border-radius:6px;flex-shrink:0;object-fit:cover;border:1px solid #2c2c34';
+    img.alt = `Frame ${i+1}`;
+    framesDiv.appendChild(img);
+  });
+
+  const jsonMeta = {
+    version: '0.1',
+    session: s,
+    counters: { sessions: state.sessions, frames: state.totalFrames, sweeps: state.totalSweeps },
+    userAgent: navigator.userAgent,
+    timestamp: new Date().toISOString(),
+  };
+  document.getElementById('summary-json').textContent = JSON.stringify(jsonMeta, null, 2);
+}
+
+document.getElementById('btn-view-splat').addEventListener('click', () => navigate('splat'));
+document.getElementById('btn-done').addEventListener('click', () => {
+  resetCapture();
+  navigate('home');
+});
+
+function exportSession() {
+  const s = state.session;
+  if (!s) { toast('No session to export'); return; }
+  const data = JSON.stringify({ version: '0.1', session: s, counters: { sessions: state.sessions, frames: state.totalFrames, sweeps: state.totalSweeps } }, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `room-scanic-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('JSON exported');
+}
+
+function resetCapture() {
+  capturedFrames = 0;
+  state.frameCanvases = [];
+  state.sweepDone = false;
+  [1,2,3].forEach(i => {
+    const c = document.getElementById(`frame-${i}`);
+    if (c) { const ctx = c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height); }
+  });
+  updateFrameUI();
+  document.getElementById('sweep-status').textContent = 'idle';
+  document.getElementById('btn-finish').disabled = true;
+  document.getElementById('capture-status-badge').textContent = 'ready';
+  document.getElementById('capture-status-badge').className = 'badge badge-warn';
+}
+
+// ─── Splat viewer (Three.js + Spark 2.1) ─────────────────────────────────────
+let splatInited = false;
+let autoRotate = false;
+let splatControls = null;
+
+async function initSplat() {
+  if (splatInited) return;
+  splatInited = true;
+  const badge = document.getElementById('splat-status-badge');
+
+  try {
+    const { Scene, PerspectiveCamera, WebGLRenderer, Clock } = await import('three');
+    const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+    const { SparkRenderer, SparkViewerControls } = await import('@sparkjsdev/spark');
+
+    const mount = document.getElementById('splat-mount');
+    const W = mount.clientWidth, H = mount.clientHeight;
+
+    const renderer = new WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(W, H);
+    mount.appendChild(renderer.domElement);
+
+    const scene = new Scene();
+    const camera = new PerspectiveCamera(60, W / H, 0.01, 1000);
+    camera.position.set(0, 0, 3);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    splatControls = controls;
+
+    const spark = new SparkRenderer({ renderer, scene, camera });
+    await spark.loadFile('https://huggingface.co/sparkjsdev/example-spz-files/resolve/main/butterfly.spz');
+
+    badge.textContent = 'live';
+    badge.className = 'badge badge-ok';
+
+    const clock = new Clock();
+    let frames = 0, fpsT = performance.now();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+      if (autoRotate) controls.autoRotate = true;
+      controls.update();
+      spark.update(delta);
+      renderer.render(scene, camera);
+      frames++;
+      const now = performance.now();
+      if (now - fpsT > 1000) {
+        document.getElementById('splat-fps').textContent = `${frames} fps`;
+        frames = 0; fpsT = now;
+      }
+    }
+    animate();
+
+    // resize
+    const ro = new ResizeObserver(() => {
+      const nW = mount.clientWidth, nH = mount.clientHeight;
+      camera.aspect = nW / nH;
+      camera.updateProjectionMatrix();
+      renderer.setSize(nW, nH);
+    });
+    ro.observe(mount);
+
+    document.getElementById('btn-splat-reset').addEventListener('click', () => {
+      camera.position.set(0, 0, 3);
+      controls.reset();
+    });
+    document.getElementById('btn-splat-auto').addEventListener('click', () => {
+      autoRotate = !autoRotate;
+      controls.autoRotate = autoRotate;
+      document.getElementById('btn-splat-auto').textContent = autoRotate ? 'Stop Rotate' : 'Auto Rotate';
+    });
+
+  } catch (err) {
+    console.error('Splat init error:', err);
+    badge.textContent = 'error';
+    badge.className = 'badge badge-err';
+    toast('Splat viewer failed to load — check console');
+  }
+}
+
+// init splat when switching to splat screen
+tabs.forEach(t => {
+  if (t.dataset.screen === 'splat') t.addEventListener('click', initSplat);
+});
+document.getElementById('btn-view-splat').addEventListener('click', initSplat);
+document.getElementById('btn-demo-splat').addEventListener('click', initSplat);
+document.getElementById('btn-splat-back').addEventListener('click', () => navigate('home'));
+
+// ─── Util ─────────────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+refreshHome();
+</script>
 </body>
 </html>
