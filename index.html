@@ -442,8 +442,11 @@ hr{border:none;border-top:1px solid var(--border)}
 
 <script type="module">
 // ─── State ──────────────────────────────────────────────────────────────────
+const MAX_WORLDS = 8;
+const DEMO_SPLAT_URL = 'https://sparkjs.dev/assets/splats/butterfly.spz';
+
 const state = {
-  worlds: JSON.parse(localStorage.getItem('rs_worlds') || '[]').slice(0, 8),
+  worlds: JSON.parse(localStorage.getItem('rs_worlds') || '[]').slice(0, MAX_WORLDS),
   sessions: parseInt(localStorage.getItem('rs_sessions') || '0'),
   totalFrames: parseInt(localStorage.getItem('rs_frames') || '0'),
   totalSweeps: parseInt(localStorage.getItem('rs_sweeps') || '0'),
@@ -459,9 +462,6 @@ const state = {
   audioCtx: null,
   micStream: null,
 };
-
-const MAX_WORLDS = 8;
-const DEMO_SPLAT_URL = 'https://sparkjs.dev/assets/splats/butterfly.spz';
 
 function saveCounters() {
   state.worlds = state.worlds.slice(0, MAX_WORLDS);
@@ -907,6 +907,7 @@ function updateSplatAutoButton() {
 }
 
 function disposeSplat() {
+  const mount = document.getElementById('splat-mount');
   splatState.token++;
   splatState.initialized = false;
   splatState.loading = null;
@@ -923,12 +924,10 @@ function disposeSplat() {
   splatState.spark?.removeFromParent?.();
   splatState.spark?.dispose?.();
   splatState.spark = null;
-  if (splatState.renderer?.domElement?.parentNode) {
-    splatState.renderer.domElement.remove();
-  }
   splatState.renderer?.dispose?.();
   splatState.renderer = null;
   splatState.camera = null;
+  mount?.querySelectorAll('canvas').forEach(canvas => canvas.remove());
   document.getElementById('splat-fps').textContent = '— fps';
   updateSplatAutoButton();
 }
@@ -974,21 +973,18 @@ async function initSplat() {
       splat.position.set(0, 0, -3);
       scene.add(splat);
 
-      if (splat.initialized) await splat.initialized;
-      if (token !== splatState.token) {
-        controls.dispose();
-        splat.removeFromParent?.();
-        spark.removeFromParent?.();
-        renderer.domElement.remove();
-        renderer.dispose();
-        return;
-      }
-
       splatState.renderer = renderer;
       splatState.camera = camera;
       splatState.controls = controls;
       splatState.spark = spark;
       splatState.splat = splat;
+
+      await splat.initialized;
+      if (token !== splatState.token) {
+        disposeSplat();
+        return;
+      }
+
       splatState.initialized = true;
 
       badge.textContent = 'live';
@@ -1022,7 +1018,6 @@ async function initSplat() {
     } catch (err) {
       console.error('Splat init error:', err);
       disposeSplat();
-      mount.querySelectorAll('canvas').forEach(canvas => canvas.remove());
       badge.textContent = 'error';
       badge.className = 'badge badge-err';
       toast(`Splat viewer failed to load — ${err?.message || 'Unknown error'}`);
