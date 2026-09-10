@@ -906,6 +906,16 @@ function updateSplatAutoButton() {
   document.getElementById('btn-splat-auto').textContent = autoRotate ? 'Stop Rotate' : 'Auto Rotate';
 }
 
+function cleanupSplatResources({ renderer, controls, spark, splat }) {
+  controls?.dispose?.();
+  splat?.removeFromParent?.();
+  splat?.dispose?.();
+  spark?.removeFromParent?.();
+  spark?.dispose?.();
+  if (renderer?.domElement?.parentNode) renderer.domElement.remove();
+  renderer?.dispose?.();
+}
+
 function disposeSplat() {
   const mount = document.getElementById('splat-mount');
   splatState.token++;
@@ -916,16 +926,11 @@ function disposeSplat() {
   splatState.rafId = 0;
   splatState.resizeObserver?.disconnect();
   splatState.resizeObserver = null;
-  splatState.controls?.dispose?.();
-  splatState.controls = null;
-  splatState.splat?.removeFromParent?.();
-  splatState.splat?.dispose?.();
-  splatState.splat = null;
-  splatState.spark?.removeFromParent?.();
-  splatState.spark?.dispose?.();
-  splatState.spark = null;
-  splatState.renderer?.dispose?.();
+  cleanupSplatResources(splatState);
   splatState.renderer = null;
+  splatState.controls = null;
+  splatState.spark = null;
+  splatState.splat = null;
   splatState.camera = null;
   mount?.querySelectorAll('canvas').forEach(canvas => canvas.remove());
   document.getElementById('splat-fps').textContent = '— fps';
@@ -943,6 +948,10 @@ async function initSplat() {
   mount.querySelectorAll('canvas').forEach(canvas => canvas.remove());
 
   splatState.loading = (async () => {
+    let renderer;
+    let controls;
+    let spark;
+    let splat;
     try {
       const { Scene, PerspectiveCamera, WebGLRenderer } = await import('three');
       const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
@@ -951,7 +960,7 @@ async function initSplat() {
       const W = Math.max(mount.clientWidth, 1);
       const H = Math.max(mount.clientHeight, 1);
 
-      const renderer = new WebGLRenderer({ antialias: false, alpha: false });
+      renderer = new WebGLRenderer({ antialias: false, alpha: false });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.setSize(W, H, false);
       mount.appendChild(renderer.domElement);
@@ -960,15 +969,18 @@ async function initSplat() {
       const camera = new PerspectiveCamera(60, W / H, 0.01, 1000);
       camera.position.set(0, 0, 3);
 
-      const controls = new OrbitControls(camera, renderer.domElement);
+      controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.06;
       controls.autoRotate = autoRotate;
+      controls.target.set(0, 0, 0);
+      controls.update();
+      controls.saveState();
 
-      const spark = new SparkRenderer({ renderer });
+      spark = new SparkRenderer({ renderer });
       scene.add(spark);
 
-      const splat = new SplatMesh({ url: DEMO_SPLAT_URL });
+      splat = new SplatMesh({ url: DEMO_SPLAT_URL });
       splat.quaternion.set(1, 0, 0, 0);
       splat.position.set(0, 0, -3);
       scene.add(splat);
@@ -981,7 +993,7 @@ async function initSplat() {
 
       await splat.initialized;
       if (token !== splatState.token) {
-        disposeSplat();
+        cleanupSplatResources({ renderer, controls, spark, splat });
         return;
       }
 
@@ -1017,7 +1029,8 @@ async function initSplat() {
       splatState.resizeObserver.observe(mount);
     } catch (err) {
       console.error('Splat init error:', err);
-      disposeSplat();
+      if (token === splatState.token) disposeSplat();
+      else cleanupSplatResources({ renderer, controls, spark, splat });
       badge.textContent = 'error';
       badge.className = 'badge badge-err';
       toast(`Splat viewer failed to load — ${err?.message || 'Unknown error'}`);
@@ -1034,7 +1047,6 @@ document.getElementById('btn-splat-reset').addEventListener('click', () => {
   autoRotate = false;
   splatState.controls.autoRotate = false;
   splatState.controls.reset();
-  splatState.camera.position.set(0, 0, 3);
   splatState.controls.update();
   updateSplatAutoButton();
 });
