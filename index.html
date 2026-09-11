@@ -17,7 +17,7 @@
   "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
-    "@sparkjsdev/spark": "https://www.sparkjs.dev/releases/2.1.0/spark.module.min.js"
+    "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/2.1.0/spark.module.min.js"
   }
 }
 </script>
@@ -140,7 +140,7 @@ hr{border:none;border-top:1px solid var(--border)}
 #sweep-viz{width:100%;height:80px;background:var(--bg3);border-radius:var(--r-sm);overflow:hidden}
 /* Splat viewer */
 #splat-mount{flex:1;min-height:300px;position:relative;background:#000;border-radius:var(--r);overflow:hidden}
-#splat-mount canvas{width:100%!important;height:100%!important;display:block}
+#splat-mount canvas{width:100%!important;height:100%!important;display:block;touch-action:none}
 .splat-overlay{position:absolute;top:10px;left:10px;display:flex;gap:6px;flex-wrap:wrap;z-index:10}
 /* Summary KV grid */
 .kv-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -181,7 +181,7 @@ hr{border:none;border-top:1px solid var(--border)}
   <nav id="nav">
     <div>
       <div id="nav-title">Room Scanic</div>
-      <div id="nav-subtitle">SPLAT.PROBE v0.1</div>
+      <div id="nav-subtitle">SPLAT.PROBE v0.1.1</div>
     </div>
     <div class="nav-actions">
       <button class="btn btn-ghost btn-sm btn-icon" id="btn-export" title="Export session JSON" style="display:none">
@@ -442,8 +442,11 @@ hr{border:none;border-top:1px solid var(--border)}
 
 <script type="module">
 // ─── State ──────────────────────────────────────────────────────────────────
+const MAX_WORLDS = 8;
+const DEMO_SPLAT_URL = 'https://sparkjs.dev/assets/splats/butterfly.spz';
+
 const state = {
-  worlds: JSON.parse(localStorage.getItem('rs_worlds') || '[]'),
+  worlds: JSON.parse(localStorage.getItem('rs_worlds') || '[]').slice(0, MAX_WORLDS),
   sessions: parseInt(localStorage.getItem('rs_sessions') || '0'),
   totalFrames: parseInt(localStorage.getItem('rs_frames') || '0'),
   totalSweeps: parseInt(localStorage.getItem('rs_sweeps') || '0'),
@@ -457,9 +460,11 @@ const state = {
   mediaRecorder: null,
   audioChunks: [],
   audioCtx: null,
+  micStream: null,
 };
 
 function saveCounters() {
+  state.worlds = state.worlds.slice(0, MAX_WORLDS);
   localStorage.setItem('rs_sessions', state.sessions);
   localStorage.setItem('rs_frames', state.totalFrames);
   localStorage.setItem('rs_sweeps', state.totalSweeps);
@@ -475,6 +480,8 @@ document.querySelectorAll('.screen').forEach(el => {
 const tabs = document.querySelectorAll('.tab');
 
 function navigate(name) {
+  const activeScreen = document.querySelector('.screen.active')?.id?.replace('screen-', '');
+  if (activeScreen === 'splat' && name !== 'splat') disposeSplat();
   Object.values(screens).forEach(s => s.classList.remove('active'));
   tabs.forEach(t => t.classList.remove('active'));
   const s = screens[name];
@@ -483,6 +490,7 @@ function navigate(name) {
   if (t) t.classList.add('active');
   if (name === 'home') refreshHome();
   if (name === 'summary') buildSummary();
+  if (name === 'splat') initSplat();
 }
 
 tabs.forEach(t => t.addEventListener('click', () => navigate(t.dataset.screen)));
@@ -614,6 +622,8 @@ async function requestMotion() {
 }
 
 function startOrientation() {
+  if (startOrientation.started) return;
+  startOrientation.started = true;
   window.addEventListener('deviceorientation', (e) => {
     state.orientation = { alpha: e.alpha, beta: e.beta, gamma: e.gamma, absolute: e.absolute };
     document.getElementById('ori-alpha').textContent = e.alpha != null ? e.alpha.toFixed(1) + '°' : '—';
@@ -711,9 +721,11 @@ async function runSweep() {
 
   // record if mic available
   if (state.micStream) {
-    const dest = ac.createMediaStreamDestination();
-    analyser.connect(dest);
-    state.mediaRecorder = new MediaRecorder(dest.stream);
+    const recorderOptions = ['audio/webm;codecs=opus', 'audio/mp4']
+      .find(mimeType => MediaRecorder.isTypeSupported?.(mimeType));
+    state.mediaRecorder = recorderOptions
+      ? new MediaRecorder(state.micStream, { mimeType: recorderOptions })
+      : new MediaRecorder(state.micStream);
     state.audioChunks = [];
     state.mediaRecorder.ondataavailable = (e) => state.audioChunks.push(e.data);
     state.mediaRecorder.start();
@@ -721,9 +733,10 @@ async function runSweep() {
 
   const vizCanvas = document.getElementById('sweep-viz');
   const vCtx = vizCanvas.getContext('2d');
-  vizCanvas.width = vizCanvas.offsetWidth * devicePixelRatio;
-  vizCanvas.height = vizCanvas.offsetHeight * devicePixelRatio;
-  vCtx.scale(devicePixelRatio, devicePixelRatio);
+  const dpr = window.devicePixelRatio || 1;
+  vizCanvas.width = vizCanvas.offsetWidth * dpr;
+  vizCanvas.height = vizCanvas.offsetHeight * dpr;
+  vCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const W = vizCanvas.offsetWidth, H = vizCanvas.offsetHeight;
   const bufLen = analyser.frequencyBinCount;
   const dataArr = new Uint8Array(bufLen);
@@ -788,6 +801,7 @@ function finishCapture() {
     thumb: state.frameCanvases[0] || null,
   };
   state.worlds.unshift(world);
+  state.worlds = state.worlds.slice(0, MAX_WORLDS);
   state.session = world;
   saveCounters();
 
@@ -874,95 +888,173 @@ function resetCapture() {
 }
 
 // ─── Splat viewer (Three.js + Spark 2.1) ─────────────────────────────────────
-let splatInited = false;
 let autoRotate = false;
-let splatControls = null;
+const splatState = {
+  token: 0,
+  initialized: false,
+  loading: null,
+  renderer: null,
+  camera: null,
+  controls: null,
+  resizeObserver: null,
+  rafId: 0,
+  spark: null,
+  splat: null,
+};
 
-async function initSplat() {
-  if (splatInited) return;
-  splatInited = true;
-  const badge = document.getElementById('splat-status-badge');
-
-  try {
-    const { Scene, PerspectiveCamera, WebGLRenderer, Clock } = await import('three');
-    const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
-    const { SparkRenderer, SparkViewerControls } = await import('@sparkjsdev/spark');
-
-    const mount = document.getElementById('splat-mount');
-    const W = mount.clientWidth, H = mount.clientHeight;
-
-    const renderer = new WebGLRenderer({ antialias: true, alpha: false });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    renderer.setSize(W, H);
-    mount.appendChild(renderer.domElement);
-
-    const scene = new Scene();
-    const camera = new PerspectiveCamera(60, W / H, 0.01, 1000);
-    camera.position.set(0, 0, 3);
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.06;
-    splatControls = controls;
-
-    const spark = new SparkRenderer({ renderer, scene, camera });
-    await spark.loadFile('https://huggingface.co/sparkjsdev/example-spz-files/resolve/main/butterfly.spz');
-
-    badge.textContent = 'live';
-    badge.className = 'badge badge-ok';
-
-    const clock = new Clock();
-    let frames = 0, fpsT = performance.now();
-
-    function animate() {
-      requestAnimationFrame(animate);
-      const delta = clock.getDelta();
-      if (autoRotate) controls.autoRotate = true;
-      controls.update();
-      spark.update(delta);
-      renderer.render(scene, camera);
-      frames++;
-      const now = performance.now();
-      if (now - fpsT > 1000) {
-        document.getElementById('splat-fps').textContent = `${frames} fps`;
-        frames = 0; fpsT = now;
-      }
-    }
-    animate();
-
-    // resize
-    const ro = new ResizeObserver(() => {
-      const nW = mount.clientWidth, nH = mount.clientHeight;
-      camera.aspect = nW / nH;
-      camera.updateProjectionMatrix();
-      renderer.setSize(nW, nH);
-    });
-    ro.observe(mount);
-
-    document.getElementById('btn-splat-reset').addEventListener('click', () => {
-      camera.position.set(0, 0, 3);
-      controls.reset();
-    });
-    document.getElementById('btn-splat-auto').addEventListener('click', () => {
-      autoRotate = !autoRotate;
-      controls.autoRotate = autoRotate;
-      document.getElementById('btn-splat-auto').textContent = autoRotate ? 'Stop Rotate' : 'Auto Rotate';
-    });
-
-  } catch (err) {
-    console.error('Splat init error:', err);
-    badge.textContent = 'error';
-    badge.className = 'badge badge-err';
-    toast('Splat viewer failed to load — check console');
-  }
+function updateSplatAutoButton() {
+  document.getElementById('btn-splat-auto').textContent = autoRotate ? 'Stop Rotate' : 'Auto Rotate';
 }
 
-// init splat when switching to splat screen
-tabs.forEach(t => {
-  if (t.dataset.screen === 'splat') t.addEventListener('click', initSplat);
+function cleanupSplatResources({ renderer, controls, spark, splat }) {
+  controls?.dispose?.();
+  splat?.removeFromParent?.();
+  splat?.dispose?.();
+  spark?.removeFromParent?.();
+  spark?.dispose?.();
+  if (renderer?.domElement?.parentNode) renderer.domElement.remove();
+  renderer?.dispose?.();
+}
+
+function disposeSplat() {
+  const mount = document.getElementById('splat-mount');
+  splatState.token++;
+  splatState.initialized = false;
+  splatState.loading = null;
+  autoRotate = false;
+  if (splatState.rafId) cancelAnimationFrame(splatState.rafId);
+  splatState.rafId = 0;
+  splatState.resizeObserver?.disconnect();
+  splatState.resizeObserver = null;
+  cleanupSplatResources(splatState);
+  splatState.renderer = null;
+  splatState.controls = null;
+  splatState.spark = null;
+  splatState.splat = null;
+  splatState.camera = null;
+  mount?.querySelectorAll('canvas').forEach(canvas => canvas.remove());
+  document.getElementById('splat-fps').textContent = '— fps';
+  updateSplatAutoButton();
+}
+
+async function initSplat() {
+  if (splatState.initialized) return;
+  if (splatState.loading) return splatState.loading;
+  const badge = document.getElementById('splat-status-badge');
+  const mount = document.getElementById('splat-mount');
+  const token = splatState.token;
+  badge.textContent = 'loading';
+  badge.className = 'badge badge-warn';
+  mount.querySelectorAll('canvas').forEach(canvas => canvas.remove());
+
+  splatState.loading = (async () => {
+    let renderer;
+    let controls;
+    let spark;
+    let splat;
+    try {
+      const { Scene, PerspectiveCamera, WebGLRenderer } = await import('three');
+      const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+      const { SparkRenderer, SplatMesh } = await import('@sparkjsdev/spark');
+
+      const W = Math.max(mount.clientWidth, 1);
+      const H = Math.max(mount.clientHeight, 1);
+
+      renderer = new WebGLRenderer({ antialias: false, alpha: false });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setSize(W, H, false);
+      mount.appendChild(renderer.domElement);
+
+      const scene = new Scene();
+      const camera = new PerspectiveCamera(60, W / H, 0.01, 1000);
+      camera.position.set(0, 0, 3);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.06;
+      controls.autoRotate = autoRotate;
+      controls.target.set(0, 0, 0);
+      controls.update();
+      controls.saveState();
+
+      spark = new SparkRenderer({ renderer });
+      scene.add(spark);
+
+      splat = new SplatMesh({ url: DEMO_SPLAT_URL });
+      splat.quaternion.set(1, 0, 0, 0);
+      splat.position.set(0, 0, -3);
+      scene.add(splat);
+
+      splatState.renderer = renderer;
+      splatState.camera = camera;
+      splatState.controls = controls;
+      splatState.spark = spark;
+      splatState.splat = splat;
+
+      await splat.initialized;
+      if (token !== splatState.token) {
+        cleanupSplatResources({ renderer, controls, spark, splat });
+        return;
+      }
+
+      splatState.initialized = true;
+
+      badge.textContent = 'live';
+      badge.className = 'badge badge-ok';
+
+      let frames = 0, fpsT = performance.now();
+      const animate = () => {
+        splatState.rafId = requestAnimationFrame(animate);
+        controls.autoRotate = autoRotate;
+        controls.update();
+        renderer.render(scene, camera);
+        frames++;
+        const now = performance.now();
+        if (now - fpsT > 1000) {
+          document.getElementById('splat-fps').textContent = `${frames} fps`;
+          frames = 0;
+          fpsT = now;
+        }
+      };
+      animate();
+
+      splatState.resizeObserver = new ResizeObserver(() => {
+        const nW = Math.max(mount.clientWidth, 1);
+        const nH = Math.max(mount.clientHeight, 1);
+        camera.aspect = nW / nH;
+        camera.updateProjectionMatrix();
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setSize(nW, nH, false);
+      });
+      splatState.resizeObserver.observe(mount);
+    } catch (err) {
+      console.error('Splat init error:', err);
+      if (token === splatState.token) disposeSplat();
+      else cleanupSplatResources({ renderer, controls, spark, splat });
+      badge.textContent = 'error';
+      badge.className = 'badge badge-err';
+      toast(`Splat viewer failed to load — ${err?.message || 'Unknown error'}`);
+    } finally {
+      splatState.loading = null;
+    }
+  })();
+
+  return splatState.loading;
+}
+
+document.getElementById('btn-splat-reset').addEventListener('click', () => {
+  if (!splatState.camera || !splatState.controls) return;
+  autoRotate = false;
+  splatState.controls.autoRotate = false;
+  splatState.controls.reset();
+  splatState.controls.update();
+  updateSplatAutoButton();
 });
-document.getElementById('btn-view-splat').addEventListener('click', initSplat);
-document.getElementById('btn-demo-splat').addEventListener('click', initSplat);
+document.getElementById('btn-splat-auto').addEventListener('click', () => {
+  autoRotate = !autoRotate;
+  if (splatState.controls) splatState.controls.autoRotate = autoRotate;
+  updateSplatAutoButton();
+});
 document.getElementById('btn-splat-back').addEventListener('click', () => navigate('home'));
 
 // ─── Util ─────────────────────────────────────────────────────────────────────
