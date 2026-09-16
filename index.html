@@ -27,7 +27,7 @@
   <nav id="nav">
     <div>
       <div id="nav-title">Room Scanic</div>
-      <div id="nav-subtitle">SPLAT.PROBE v0.2.0</div>
+      <div id="nav-subtitle">SPLAT.PROBE v0.3.0</div>
     </div>
     <div class="nav-actions">
       <button class="btn btn-ghost btn-sm btn-icon" id="btn-export" title="Export session JSON" hidden>
@@ -65,7 +65,7 @@
     <div class="page">
       <div>
         <h2>Permissions</h2>
-        <p class="muted" style="margin-top:6px;font-size:13px">Camera, mic, and motion are optional individually. Camera is the useful one.</p>
+        <p class="muted" style="margin-top:6px;font-size:13px">Camera, mic, and motion are optional individually. Mic is required for IR / RT60.</p>
       </div>
       <div class="card">
         <div class="perm-row">
@@ -75,7 +75,7 @@
         </div>
         <div class="perm-row">
           <div class="perm-icon"><svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10a7 7 0 0 1-14 0"/><line x1="12" y1="19" x2="12" y2="22"/></svg></div>
-          <div style="flex:1"><div>Microphone</div><div class="muted" style="font-size:12px">Room-response sweep</div></div>
+          <div style="flex:1"><div>Microphone</div><div class="muted" style="font-size:12px">Farina ESS → IR / RT60</div></div>
           <span class="badge badge-warn" id="badge-mic">pending</span>
         </div>
         <div class="perm-row">
@@ -103,7 +103,7 @@
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-primary" id="btn-snap" style="flex:1">Snap Frame</button>
-        <button class="btn btn-ghost" id="btn-sweep" style="flex:1">Sine Sweep</button>
+        <button class="btn btn-ghost" id="btn-sweep" style="flex:1">ESS / RT60</button>
       </div>
       <div>
         <div style="display:flex;justify-content:space-between;margin-bottom:6px">
@@ -113,9 +113,9 @@
         <div class="progress-bar"><div class="progress-fill" id="frame-progress"></div></div>
       </div>
       <div>
-        <div class="label" style="margin-bottom:8px">Acoustic sweep</div>
+        <div class="label" style="margin-bottom:8px">ESS → IR / RT60</div>
         <canvas id="sweep-viz"></canvas>
-        <div id="sweep-status" class="muted" style="font-size:12px;margin-top:4px;font-family:var(--mono)">idle</div>
+        <div id="sweep-status" class="muted" style="font-size:12px;margin-top:4px;font-family:var(--mono)">idle · needs mic · Farina ESS 20–16 kHz</div>
       </div>
       <div class="card">
         <div class="label" style="margin-bottom:8px">Device orientation</div>
