@@ -4,6 +4,10 @@ Visual + acoustic room capture on the web. Spark Gaussian splat viewer.
 
 **https://artsrun.github.io/room-scanic/**
 
+## v0.3
+
+Farina ESS (20–16 kHz, 3 s + 1.8 s tail) → IR → T20 / T30 / EDT. Mic required. This is **device + room**, not a lab measurement. Export writes JSON plus `*-ir.wav`.
+
 ## v0.2
 
 - Modular SPA (`js/*`, `css/app.css`) instead of one 44k HTML blob

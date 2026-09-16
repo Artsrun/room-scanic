@@ -22,11 +22,14 @@ export const state = {
   stream: null,
   micStream: null,
   orientation: null,
+  orientationTrail: [],
   frameCanvases: [],
   sweepDone: false,
   mediaRecorder: null,
   audioChunks: [],
   audioCtx: null,
+  acoustic: null,
+  irWav: null,
   perms: { camera: false, mic: false, motion: false },
   pendingSplat: { kind: 'spark', id: 'butterfly' },
 };
@@ -37,8 +40,8 @@ export const persist = () => {
   localStorage.setItem(KEYS.frames, String(state.totalFrames));
   localStorage.setItem(KEYS.sweeps, String(state.totalSweeps));
   if (state.lastCapture) localStorage.setItem(KEYS.last, state.lastCapture);
-  const slim = state.worlds.map(({ name, date, frames, sweepDone, modelId }) => ({
-    name, date, frames, sweepDone, modelId: modelId || 'butterfly',
+  const slim = state.worlds.map(({ name, date, frames, sweepDone, modelId, t20, t30, reliable }) => ({
+    name, date, frames, sweepDone, modelId: modelId || 'butterfly', t20, t30, reliable,
   }));
   localStorage.setItem(KEYS.worlds, JSON.stringify(slim));
 };
