@@ -52,7 +52,7 @@ const refreshHome = () => {
       <div class="world-thumb">${escHtml(w.name.slice(0, 1))}</div>
       <div class="world-info">
         <div class="world-name">${escHtml(w.name)}</div>
-        <div class="world-meta">${w.frames} frames · ${new Date(w.date).toLocaleDateString()}${w.sweepDone ? ' · sweep' : ''}</div>
+        <div class="world-meta">${w.frames} frames · ${new Date(w.date).toLocaleDateString()}${w.t20 ? ` · T20 ${Number(w.t20).toFixed(2)}s` : w.sweepDone ? ' · sweep' : ''}</div>
       </div>
       <span class="badge badge-ok">open</span>`;
     item.addEventListener('click', () => {
