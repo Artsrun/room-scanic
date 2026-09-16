@@ -1,5 +1,9 @@
 import { state, persist, setPendingFrames } from './state.js';
 import { $, toast, setBadge } from './ui.js';
+import {
+  SWEEP, synthesizeSweep, playBuffer, deconvolve, analyzeIR,
+  encodeWav, drawDecay, fmtSec,
+} from './acoustics.js';
 
 export const MAX_FRAMES = 3;
 export let capturedFrames = 0;
@@ -8,6 +12,10 @@ export const resetCapture = () => {
   capturedFrames = 0;
   state.frameCanvases = [];
   state.sweepDone = false;
+  state.acoustic = null;
+  state.irWav = null;
+  state.audioChunks = [];
+  state.orientationTrail = [];
   [1, 2, 3].forEach((i) => {
     const c = $(`frame-${i}`);
     if (!c) return;
@@ -69,6 +77,9 @@ const startOrientation = () => {
   startOrientation.started = true;
   window.addEventListener('deviceorientation', (e) => {
     state.orientation = { alpha: e.alpha, beta: e.beta, gamma: e.gamma, absolute: e.absolute };
+    const trail = state.orientationTrail || (state.orientationTrail = []);
+    if (trail.length > 400) trail.shift();
+    trail.push({ t: Date.now(), a: e.alpha, b: e.beta, g: e.gamma });
     const set = (id, v, suffix = '°') => {
       const el = $(id);
       if (el) el.textContent = v != null ? `${Number(v).toFixed(1)}${suffix}` : '—';
@@ -126,33 +137,43 @@ export const ensurePreview = async () => {
 export const snapFrame = () => {
   const video = $('live-video');
   if (capturedFrames >= MAX_FRAMES) { toast('Max frames reached'); return; }
-
   const idx = capturedFrames + 1;
   const canvas = $(`frame-${idx}`);
   if (!canvas) return;
-
   const w = video?.videoWidth || 640;
   const h = video?.videoHeight || 480;
-  canvas.width = w;
-  canvas.height = h;
+  canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d');
   if (video?.videoWidth) ctx.drawImage(video, 0, 0, w, h);
   else {
-    ctx.fillStyle = '#16161c';
-    ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = '#a78bfa';
-    ctx.font = '16px IBM Plex Mono, monospace';
+    ctx.fillStyle = '#16161c'; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#a78bfa'; ctx.font = '16px IBM Plex Mono, monospace';
     ctx.fillText(`FRAME ${idx}  ${new Date().toLocaleTimeString()}`, 16, 36);
-    ctx.fillStyle = '#9898a8';
-    ctx.font = '12px IBM Plex Mono, monospace';
-    ctx.fillText('no camera — placeholder', 16, 58);
   }
-
   state.frameCanvases.push(canvas.toDataURL('image/jpeg', 0.72));
-  capturedFrames += 1;
-  state.totalFrames += 1;
-  updateFrameUI();
-  toast(`Frame ${idx} captured`);
+  capturedFrames += 1; state.totalFrames += 1;
+  updateFrameUI(); toast(`Frame ${idx} captured`);
+};
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const recordMic = async (ms) => {
+  if (!state.micStream) return null;
+  const mime = ['audio/webm;codecs=opus', 'audio/mp4'].find((t) => MediaRecorder.isTypeSupported?.(t));
+  const rec = mime ? new MediaRecorder(state.micStream, { mimeType: mime }) : new MediaRecorder(state.micStream);
+  const chunks = [];
+  rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  rec.start(250);
+  await sleep(ms);
+  if (rec.state !== 'inactive') rec.stop();
+  await new Promise((resolve) => { rec.onstop = resolve; });
+  return new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+};
+
+const decodeBlob = async (ac, blob) => {
+  const raw = await blob.arrayBuffer();
+  const buf = await ac.decodeAudioData(raw.slice(0));
+  return { samples: Float32Array.from(buf.getChannelData(0)), sr: buf.sampleRate };
 };
 
 export const runSweep = async () => {
@@ -161,78 +182,45 @@ export const runSweep = async () => {
   if (!state.audioCtx) state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   const ac = state.audioCtx;
   if (ac.state === 'suspended') await ac.resume();
-
   btn.disabled = true;
-  status.textContent = 'sweeping 20 Hz → 20 kHz…';
-
-  const duration = 3;
-  const osc = ac.createOscillator();
-  const gain = ac.createGain();
-  const analyser = ac.createAnalyser();
-  analyser.fftSize = 256;
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(20, ac.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(20000, ac.currentTime + duration);
-  gain.gain.setValueAtTime(0.35, ac.currentTime);
-  gain.gain.linearRampToValueAtTime(0, ac.currentTime + duration);
-  osc.connect(gain);
-  gain.connect(analyser);
-  analyser.connect(ac.destination);
-
-  if (state.micStream) {
-    const mime = ['audio/webm;codecs=opus', 'audio/mp4'].find((t) => MediaRecorder.isTypeSupported?.(t));
-    state.mediaRecorder = mime
-      ? new MediaRecorder(state.micStream, { mimeType: mime })
-      : new MediaRecorder(state.micStream);
-    state.audioChunks = [];
-    state.mediaRecorder.ondataavailable = (e) => { if (e.data.size) state.audioChunks.push(e.data); };
-    state.mediaRecorder.start();
+  status.textContent = `ESS ${SWEEP.f0}–${SWEEP.f1} Hz · ${SWEEP.T}s + ${SWEEP.tail}s tail`;
+  const { sweep } = synthesizeSweep(ac.sampleRate);
+  const recMs = Math.round((SWEEP.T + SWEEP.tail + 0.25) * 1000);
+  const recPromise = recordMic(recMs);
+  await sleep(180);
+  status.textContent = 'playing sweep — keep still';
+  await playBuffer(ac, sweep, SWEEP.gain);
+  status.textContent = 'recording tail…';
+  const blob = await recPromise;
+  state.sweepDone = true; state.totalSweeps += 1;
+  if (!blob || blob.size < 64) {
+    status.textContent = 'sweep played — no mic take (grant mic for IR / RT60)';
+    btn.disabled = false; toast('Need microphone for IR'); return;
   }
-
-  const viz = $('sweep-viz');
-  const vCtx = viz.getContext('2d');
-  const dpr = devicePixelRatio || 1;
-  viz.width = viz.clientWidth * dpr;
-  viz.height = viz.clientHeight * dpr;
-  vCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const W = viz.clientWidth;
-  const H = viz.clientHeight;
-  const dataArr = new Uint8Array(analyser.frequencyBinCount);
-  const startT = performance.now();
-  let rafId;
-
-  const draw = () => {
-    rafId = requestAnimationFrame(draw);
-    analyser.getByteFrequencyData(dataArr);
-    const elapsed = (performance.now() - startT) / 1000;
-    vCtx.fillStyle = '#141418';
-    vCtx.fillRect(0, 0, W, H);
-    const barW = W / dataArr.length;
-    dataArr.forEach((raw, i) => {
-      const v = raw / 255;
-      vCtx.fillStyle = `hsl(${260 + v * 40},70%,${40 + v * 30}%)`;
-      vCtx.fillRect(i * barW, H - v * H, barW - 1, v * H);
-    });
-    vCtx.strokeStyle = '#a78bfa';
-    vCtx.beginPath();
-    vCtx.moveTo((elapsed / duration) * W, 0);
-    vCtx.lineTo((elapsed / duration) * W, H);
-    vCtx.stroke();
-    if (elapsed >= duration) cancelAnimationFrame(rafId);
-  };
-  draw();
-
-  osc.start();
-  osc.stop(ac.currentTime + duration);
-  osc.onended = () => {
-    cancelAnimationFrame(rafId);
-    if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') state.mediaRecorder.stop();
-    state.sweepDone = true;
-    state.totalSweeps += 1;
-    status.textContent = 'sweep complete';
-    btn.disabled = false;
-    toast('Acoustic sweep recorded');
-  };
+  status.textContent = 'deconvolving…';
+  try {
+    const rec = await decodeBlob(ac, blob);
+    const { inv } = synthesizeSweep(rec.sr);
+    const ir = deconvolve(rec.samples, inv);
+    const report = analyzeIR(ir, rec.sr);
+    state.acoustic = {
+      f0: SWEEP.f0, f1: SWEEP.f1, T: SWEEP.T, tail: SWEEP.tail,
+      method: 'Farina ESS', note: 'device + room IR, not lab',
+      t20: report.t20, t30: report.t30, edt: report.edt,
+      snrDb: report.snrDb, reliable: report.reliable, sr: rec.sr,
+    };
+    const hold = Math.min(ir.length - report.peak, Math.floor(rec.sr * 1.6));
+    state.irWav = encodeWav(ir.subarray(report.peak, report.peak + hold), rec.sr);
+    drawDecay($('sweep-viz'), report.db);
+    const tag = report.reliable ? 'ok' : 'rough';
+    status.textContent = `IR ${tag} · T20 ${fmtSec(report.t20)} · T30 ${fmtSec(report.t30)} · EDT ${fmtSec(report.edt)}`;
+    toast(report.reliable ? `T20 ${fmtSec(report.t20)}` : 'IR weak — closer to speaker / quieter room');
+  } catch (err) {
+    console.warn(err);
+    status.textContent = `sweep saved, IR failed — ${err.message || 'decode'}`;
+    toast('Could not decode mic take');
+  }
+  btn.disabled = false;
 };
 
 export const stopCamera = () => {
@@ -247,59 +235,53 @@ export const finishCapture = () => {
   state.lastCapture = new Date().toISOString();
   state.sessions += 1;
   const world = {
-    name: `Room ${state.sessions}`,
-    date: state.lastCapture,
-    frames: capturedFrames,
-    sweepDone: state.sweepDone,
-    orientation: state.orientation,
-    modelId: 'butterfly',
+    name: `Room ${state.sessions}`, date: state.lastCapture, frames: capturedFrames,
+    sweepDone: state.sweepDone, orientation: state.orientation,
+    trail: (state.orientationTrail || []).slice(-80), modelId: 'butterfly',
+    t20: state.acoustic?.t20 ?? null, t30: state.acoustic?.t30 ?? null,
+    edt: state.acoustic?.edt ?? null, reliable: state.acoustic?.reliable ?? null,
+    acoustic: state.acoustic,
   };
-  state.worlds.unshift(world);
-  state.session = world;
-  persist();
-  stopCamera();
-  setPendingFrames([...state.frameCanvases]);
-  return world;
+  state.worlds.unshift(world); state.session = world; persist();
+  stopCamera(); setPendingFrames([...state.frameCanvases]); return world;
+};
+
+const downloadBlob = (blob, name) => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  URL.revokeObjectURL(a.href);
 };
 
 export const exportSession = () => {
   const s = state.session;
   if (!s) { toast('No session to export'); return; }
-  const blob = new Blob([JSON.stringify({
-    version: '0.2',
-    session: s,
+  const stamp = Date.now();
+  downloadBlob(new Blob([JSON.stringify({
+    version: '0.3', session: s, acoustic: state.acoustic,
     counters: { sessions: state.sessions, frames: state.totalFrames, sweeps: state.totalSweeps },
-  }, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `room-scanic-${Date.now()}.json`;
-  a.click();
-  URL.revokeObjectURL(a.href);
-  toast('JSON exported');
+  }, null, 2)], { type: 'application/json' }), `room-scanic-${stamp}.json`);
+  if (state.irWav) downloadBlob(state.irWav, `room-scanic-${stamp}-ir.wav`);
+  toast(state.irWav ? 'JSON + IR wav' : 'JSON exported');
 };
 
 export const buildSummary = () => {
   const s = state.session;
   if (!s) return;
   const meta = {
-    Session: `#${state.sessions}`,
-    World: s.name,
-    Frames: s.frames,
-    Sweep: s.sweepDone ? 'yes' : 'no',
+    Session: `#${state.sessions}`, World: s.name, Frames: s.frames,
+    Sweep: s.sweepDone ? 'yes' : 'no', T20: fmtSec(s.t20), T30: fmtSec(s.t30), EDT: fmtSec(s.edt),
+    IR: s.reliable ? 'usable' : (s.acoustic ? 'rough' : 'none'),
     Date: new Date(s.date).toLocaleString(),
     Orientation: s.orientation ? `α ${s.orientation.alpha?.toFixed(0) ?? '?'}` : 'n/a',
   };
   $('summary-kv').innerHTML = Object.entries(meta).map(([k, v]) =>
     `<div class="kv-cell"><div class="label">${k}</div><div class="value">${String(v)}</div></div>`
   ).join('');
-
   const framesDiv = $('summary-frames');
   framesDiv.innerHTML = '';
   state.frameCanvases.forEach((src, i) => {
-    const img = document.createElement('img');
-    img.src = src;
-    img.alt = `Frame ${i + 1}`;
+    const img = document.createElement('img'); img.src = src; img.alt = `Frame ${i + 1}`;
     framesDiv.appendChild(img);
   });
-  $('summary-json').textContent = JSON.stringify({ version: '0.2', session: s }, null, 2);
+  $('summary-json').textContent = JSON.stringify({ version: '0.3', session: s, acoustic: state.acoustic }, null, 2);
 };
