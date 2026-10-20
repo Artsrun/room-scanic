@@ -3,27 +3,203 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1">
-<meta name="theme-color" content="#0a0a0b">
+<meta name="theme-color" content="#09090b">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="description" content="Room Scanic — visual + acoustic room capture on the web">
+<meta name="description" content="Room Scanic — visual + acoustic room capture. Spark Gaussian splat viewer.">
 <title>Room Scanic</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./css/app.css">
 <script type="importmap">
 {
   "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
-    "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/2.1.0/spark.module.min.js"
+    "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/2.2.0/spark.module.js"
   }
 }
 </script>
-<link rel="stylesheet" href="app.css">
 </head>
 <body>
-<div id="app-root"></div>
-<script type="module" src="app.js"></script>
+<div id="app">
+  <nav id="nav">
+    <div>
+      <div id="nav-title">Room Scanic</div>
+      <div id="nav-subtitle">SPLAT.PROBE v0.3.0</div>
+    </div>
+    <div class="nav-actions">
+      <button class="btn btn-ghost btn-sm btn-icon" id="btn-export" title="Export session JSON" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </button>
+    </div>
+  </nav>
+
+  <section id="screen-home" class="screen active">
+    <div class="page">
+      <div class="hero-gradient">
+        <h1>Your Worlds</h1>
+        <p class="muted" style="margin-top:6px;font-size:14px">Capture a room. Explore official Spark splats while reconstruction stays offline.</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="btn-new-scan">+ New Room Scan</button>
+        <button class="btn btn-ghost" id="btn-open-library">Spark library</button>
+      </div>
+      <div id="worlds-list"></div>
+      <div class="card" id="worlds-empty" style="text-align:center;padding:28px 16px">
+        <div style="font-size:36px;margin-bottom:10px">⌂</div>
+        <div style="font-weight:600;margin-bottom:6px">No worlds yet</div>
+        <div class="muted" style="font-size:13px">Scan a space, or open the Spark library.</div>
+      </div>
+      <div class="kv-grid" id="stats-grid">
+        <div class="kv-cell"><div class="label">Sessions</div><div class="value" id="stat-sessions">0</div></div>
+        <div class="kv-cell"><div class="label">Frames</div><div class="value" id="stat-frames">0</div></div>
+        <div class="kv-cell"><div class="label">Sweeps</div><div class="value" id="stat-sweeps">0</div></div>
+        <div class="kv-cell"><div class="label">Last capture</div><div class="value" id="stat-last">—</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="screen-perms" class="screen">
+    <div class="page">
+      <div>
+        <h2>Permissions</h2>
+        <p class="muted" style="margin-top:6px;font-size:13px">Camera, mic, and motion are optional individually. Mic is required for IR / RT60.</p>
+      </div>
+      <div class="card">
+        <div class="perm-row">
+          <div class="perm-icon"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="15" height="13" rx="2"/><path d="M17 9l5-3v12l-5-3"/></svg></div>
+          <div style="flex:1"><div>Camera</div><div class="muted" style="font-size:12px">Multi-view frames</div></div>
+          <span class="badge badge-warn" id="badge-camera">pending</span>
+        </div>
+        <div class="perm-row">
+          <div class="perm-icon"><svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10a7 7 0 0 1-14 0"/><line x1="12" y1="19" x2="12" y2="22"/></svg></div>
+          <div style="flex:1"><div>Microphone</div><div class="muted" style="font-size:12px">Farina ESS → IR / RT60</div></div>
+          <span class="badge badge-warn" id="badge-mic">pending</span>
+        </div>
+        <div class="perm-row">
+          <div class="perm-icon"><svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
+          <div style="flex:1"><div>Device Motion</div><div class="muted" style="font-size:12px">Orientation trail</div></div>
+          <span class="badge badge-warn" id="badge-motion">pending</span>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-grant-perms">Grant Permissions</button>
+      <button class="btn btn-ghost" id="btn-skip-perms">Skip & Continue</button>
+    </div>
+  </section>
+
+  <section id="screen-capture" class="screen">
+    <div class="page">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <h2>Capture</h2>
+        <span class="badge badge-warn" id="capture-status-badge">ready</span>
+      </div>
+      <div id="capture-grid">
+        <div class="frame-cell"><video id="live-video" autoplay muted playsinline></video><div class="frame-label">LIVE</div></div>
+        <div class="frame-cell"><canvas id="frame-1"></canvas><div class="frame-label">FRAME 1</div></div>
+        <div class="frame-cell"><canvas id="frame-2"></canvas><div class="frame-label">FRAME 2</div></div>
+        <div class="frame-cell"><canvas id="frame-3"></canvas><div class="frame-label">FRAME 3</div></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="btn-snap" style="flex:1">Snap Frame</button>
+        <button class="btn btn-ghost" id="btn-sweep" style="flex:1">ESS / RT60</button>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span class="label">Frames</span>
+          <span class="value" id="frame-count">0 / 3</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="frame-progress"></div></div>
+      </div>
+      <div>
+        <div class="label" style="margin-bottom:8px">ESS → IR / RT60</div>
+        <canvas id="sweep-viz"></canvas>
+        <div id="sweep-status" class="muted" style="font-size:12px;margin-top:4px;font-family:var(--mono)">idle · needs mic · Farina ESS 20–16 kHz</div>
+      </div>
+      <div class="card">
+        <div class="label" style="margin-bottom:8px">Device orientation</div>
+        <div class="kv-grid">
+          <div><span class="label">α</span> <span class="value" id="ori-alpha">—</span></div>
+          <div><span class="label">β</span> <span class="value" id="ori-beta">—</span></div>
+          <div><span class="label">γ</span> <span class="value" id="ori-gamma">—</span></div>
+          <div><span class="label">abs</span> <span class="value" id="ori-abs">—</span></div>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btn-finish" disabled>Finish & Review</button>
+    </div>
+  </section>
+
+  <section id="screen-summary" class="screen">
+    <div class="page">
+      <h2>Session Summary</h2>
+      <div class="kv-grid" id="summary-kv"></div>
+      <div>
+        <div class="label" style="margin-bottom:8px">Captured frames</div>
+        <div id="summary-frames"></div>
+      </div>
+      <div class="card">
+        <div class="label" style="margin-bottom:6px">Metadata</div>
+        <pre id="summary-json"></pre>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" style="flex:1" id="btn-view-splat">View as splats</button>
+        <button class="btn btn-ghost" style="flex:1" id="btn-done">Done</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="screen-library" class="screen">
+    <div class="page">
+      <div>
+        <h2>Spark library</h2>
+        <p class="muted" style="margin-top:6px;font-size:13px">Official World Labs / Spark demo assets from sparkjs.dev. Loaded over CDN — not reconstructed from your room.</p>
+      </div>
+      <div id="library-grid"></div>
+    </div>
+  </section>
+
+  <section id="screen-splat" class="screen">
+    <div class="splat-stage">
+      <div id="splat-mount"></div>
+      <div class="splat-hud">
+        <div class="splat-top">
+          <button class="btn btn-ghost btn-sm" id="btn-splat-back">← Back</button>
+          <span class="badge badge-warn" id="splat-status-badge">idle</span>
+          <span id="splat-model-name">Butterfly</span>
+          <span class="value" id="splat-fps">— fps</span>
+        </div>
+        <div>
+          <div id="splat-picker"></div>
+          <div class="splat-bottom" style="margin-top:8px">
+            <button class="btn btn-ghost btn-sm" id="btn-splat-reset">Reset Camera</button>
+            <button class="btn btn-ghost btn-sm" id="btn-splat-auto">Auto Rotate</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <nav id="tab-bar">
+    <button class="tab active" data-screen="home">
+      <svg viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg>
+      Home
+    </button>
+    <button class="tab" data-screen="capture">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M20 7h-2.5l-1.5-2h-8L6.5 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/></svg>
+      Capture
+    </button>
+    <button class="tab" data-screen="library">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/></svg>
+      Library
+    </button>
+    <button class="tab" data-screen="splat">
+      <svg viewBox="0 0 24 24"><polygon points="12 2 15 9 22 9 16.5 14 18.5 21 12 17 5.5 21 7.5 14 2 9 9 9"/></svg>
+      Splat
+    </button>
+  </nav>
+</div>
+<div id="toast"></div>
+<script type="module" src="./js/app.js"></script>
 </body>
 </html>

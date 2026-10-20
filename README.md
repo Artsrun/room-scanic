@@ -11,30 +11,41 @@ Inspired by the spatial intelligence surface of [World Labs / Marble](https://ww
 **https://artsrun.github.io/room-scanic/**
 
 GitHub Pages must deploy from **main** `/` (the `prod` branch is README-only). Open on a real phone — HTTPS is required for camera / mic.
+Visual + acoustic room capture on the web. Spark Gaussian splat viewer.
 
-## What it does
+**https://artsrun.github.io/room-scanic/**
 
-| Stage | Capture |
-|-------|---------|
-| **Visual** | Rear camera multi-view frames (canvas path — works on iOS) |
-| **Acoustic** | Exponential sine sweep + **mic** record → approximate room response |
-| **Motion** | Device orientation samples while you walk the room |
-| **Viewer** | Spark 2.1 Gaussian splat field (`butterfly.spz` demo until a reconstruction pipeline exists) |
+## v0.3
 
-Browser limits are real: no LiDAR depth on pure web, no live 3DGS reconstruction client-side. Stored frames + audio + motion are the on-device payload for a later offline / server pipeline.
+Farina ESS (20–16 kHz, 3 s + 1.8 s tail) → IR → T20 / T30 / EDT. Mic required. This is **device + room**, not a lab measurement. Export writes JSON plus `*-ir.wav`.
 
-## Stack
+## v0.2
+
+- Modular SPA (`js/*`, `css/app.css`) instead of one 44k HTML blob
+- Spark **2.2.0** + Three r180
+- Official Spark / World Labs models from `https://sparkjs.dev/assets/splats/` (catalog in `models/catalog.json`)
+- Full-bleed splat viewer, model chips, load progress, `setAnimationLoop` FPS
+- Capture finish unlocks at **1** frame (sweep optional)
+- After a scan, “View as splats” builds a proxy field from captured frames via Spark `imageSplats`
+
+Browser still cannot do live 3DGS reconstruction. Frames + sweep + orientation are the on-device payload.
 
 - Single-file SPA (`index.html`)
 - Three.js `0.180.0` + [Spark 2.1](https://sparkjs.dev/) (`SplatMesh` + `SparkRenderer`)
 - getUserMedia · MediaRecorder · DeviceOrientation · Web Audio
+## Pages
+
+Deploy from **main** / root. `prod` is README-only.
 
 ## Local
 
 ```bash
 python3 -m http.server 8765
-# open http://localhost:8765
 ```
+
+## Stack
+
+getUserMedia · MediaRecorder · DeviceOrientation · Web Audio · Three.js · [Spark](https://sparkjs.dev/)
 
 ## License
 
